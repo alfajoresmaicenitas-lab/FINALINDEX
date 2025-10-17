@@ -592,6 +592,18 @@
       color: var(--accent-dark);
     }
 
+    .modal-message {
+      margin: 0;
+      color: var(--muted-text);
+      font-size: 0.95rem;
+    }
+
+    .modal-body {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
     .modal-actions {
       display: flex;
       justify-content: flex-end;
@@ -744,6 +756,8 @@
     </section>
   </div>
 
+  <div id="modal-root"></div>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -772,6 +786,290 @@
       let state = loadState();
       let lastResults = [];
       let toastTimeout = null;
+
+      const modalRoot = ensureModalRoot();
+
+      function ensureModalRoot() {
+        let root = document.getElementById('modal-root');
+        if (!root) {
+          root = document.createElement('div');
+          root.id = 'modal-root';
+          document.body.appendChild(root);
+        }
+        return root;
+      }
+
+      function getFocusableElements(container) {
+        const selectors = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+        return Array.from(container.querySelectorAll(selectors)).filter((element) => {
+          return !element.disabled && element.getAttribute('aria-hidden') !== 'true' && element.tabIndex !== -1;
+        });
+      }
+
+      function trapFocus(event, container) {
+        if (event.key !== 'Tab') return;
+        const focusable = getFocusableElements(container);
+        if (!focusable.length) {
+          event.preventDefault();
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (focusable.length === 1) {
+          event.preventDefault();
+          first.focus();
+          return;
+        }
+        if (event.shiftKey) {
+          if (document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          }
+        } else if (document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+
+      async function openAlertModal({ title, message }) {
+        return new Promise((resolve) => {
+          const overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          const modal = document.createElement('div');
+          modal.className = 'modal';
+          modal.setAttribute('role', 'dialog');
+          modal.setAttribute('aria-modal', 'true');
+
+          const heading = document.createElement('h3');
+          heading.textContent = title;
+          const body = document.createElement('p');
+          body.className = 'modal-message';
+          body.textContent = message;
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const confirmButton = document.createElement('button');
+          confirmButton.className = 'confirm';
+          confirmButton.type = 'button';
+          confirmButton.textContent = 'Aceptar';
+          actions.appendChild(confirmButton);
+
+          modal.appendChild(heading);
+          modal.appendChild(body);
+          modal.appendChild(actions);
+          overlay.appendChild(modal);
+          modalRoot.appendChild(overlay);
+
+          const focusTarget = getFocusableElements(modal)[0] || confirmButton;
+          setTimeout(() => focusTarget.focus(), 0);
+
+          const cleanup = () => {
+            overlay.removeEventListener('click', handleOverlayClick);
+            overlay.removeEventListener('keydown', handleKeyDown);
+            confirmButton.removeEventListener('click', handleConfirm);
+            if (overlay.parentNode) {
+              overlay.parentNode.removeChild(overlay);
+            }
+          };
+
+          const handleConfirm = () => {
+            cleanup();
+            resolve();
+          };
+
+          const handleOverlayClick = (event) => {
+            if (event.target === overlay) {
+              handleConfirm();
+            }
+          };
+
+          const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              handleConfirm();
+              return;
+            }
+            if (event.key === 'Enter' && document.activeElement === confirmButton) {
+              event.preventDefault();
+              handleConfirm();
+              return;
+            }
+            trapFocus(event, modal);
+          };
+
+          overlay.addEventListener('click', handleOverlayClick);
+          overlay.addEventListener('keydown', handleKeyDown);
+          confirmButton.addEventListener('click', handleConfirm);
+        });
+      }
+
+      async function openConfirmModal({ title, message, confirmText = 'Confirmar', cancelText = 'Cancelar' }) {
+        return new Promise((resolve) => {
+          const overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          const modal = document.createElement('div');
+          modal.className = 'modal';
+          modal.setAttribute('role', 'dialog');
+          modal.setAttribute('aria-modal', 'true');
+
+          const heading = document.createElement('h3');
+          heading.textContent = title;
+          const body = document.createElement('p');
+          body.className = 'modal-message';
+          body.textContent = message;
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const cancelButton = document.createElement('button');
+          cancelButton.className = 'cancel';
+          cancelButton.type = 'button';
+          cancelButton.textContent = cancelText;
+          const confirmButton = document.createElement('button');
+          confirmButton.className = 'confirm';
+          confirmButton.type = 'button';
+          confirmButton.textContent = confirmText;
+          actions.appendChild(cancelButton);
+          actions.appendChild(confirmButton);
+
+          modal.appendChild(heading);
+          modal.appendChild(body);
+          modal.appendChild(actions);
+          overlay.appendChild(modal);
+          modalRoot.appendChild(overlay);
+
+          const focusTarget = getFocusableElements(modal)[0] || cancelButton;
+          setTimeout(() => focusTarget.focus(), 0);
+
+          const cleanup = () => {
+            overlay.removeEventListener('click', handleOverlayClick);
+            overlay.removeEventListener('keydown', handleKeyDown);
+            cancelButton.removeEventListener('click', handleCancel);
+            confirmButton.removeEventListener('click', handleConfirm);
+            if (overlay.parentNode) {
+              overlay.parentNode.removeChild(overlay);
+            }
+          };
+
+          const handleCancel = () => {
+            cleanup();
+            resolve(false);
+          };
+
+          const handleConfirm = () => {
+            cleanup();
+            resolve(true);
+          };
+
+          const handleOverlayClick = (event) => {
+            if (event.target === overlay) {
+              handleCancel();
+            }
+          };
+
+          const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              handleCancel();
+              return;
+            }
+            trapFocus(event, modal);
+          };
+
+          overlay.addEventListener('click', handleOverlayClick);
+          overlay.addEventListener('keydown', handleKeyDown);
+          cancelButton.addEventListener('click', handleCancel);
+          confirmButton.addEventListener('click', handleConfirm);
+        });
+      }
+
+      async function openPromptModal({ title, label, placeholder = '', initialValue = '', confirmText = 'Aceptar', cancelText = 'Cancelar' }) {
+        return new Promise((resolve) => {
+          const overlay = document.createElement('div');
+          overlay.className = 'modal-overlay';
+          const modal = document.createElement('div');
+          modal.className = 'modal';
+          modal.setAttribute('role', 'dialog');
+          modal.setAttribute('aria-modal', 'true');
+
+          const heading = document.createElement('h3');
+          heading.textContent = title;
+          const body = document.createElement('div');
+          body.className = 'modal-body';
+          const promptLabel = document.createElement('label');
+          const labelSpan = document.createElement('span');
+          labelSpan.textContent = label;
+          const input = document.createElement('input');
+          input.type = 'text';
+          input.value = initialValue;
+          input.placeholder = placeholder;
+          promptLabel.appendChild(labelSpan);
+          promptLabel.appendChild(input);
+          body.appendChild(promptLabel);
+          const actions = document.createElement('div');
+          actions.className = 'modal-actions';
+          const cancelButton = document.createElement('button');
+          cancelButton.className = 'cancel';
+          cancelButton.type = 'button';
+          cancelButton.textContent = cancelText;
+          const confirmButton = document.createElement('button');
+          confirmButton.className = 'confirm';
+          confirmButton.type = 'button';
+          confirmButton.textContent = confirmText;
+          actions.appendChild(cancelButton);
+          actions.appendChild(confirmButton);
+
+          modal.appendChild(heading);
+          modal.appendChild(body);
+          modal.appendChild(actions);
+          overlay.appendChild(modal);
+          modalRoot.appendChild(overlay);
+
+          setTimeout(() => input.focus(), 0);
+
+          const cleanup = () => {
+            overlay.removeEventListener('click', handleOverlayClick);
+            overlay.removeEventListener('keydown', handleKeyDown);
+            cancelButton.removeEventListener('click', handleCancel);
+            confirmButton.removeEventListener('click', handleConfirm);
+            if (overlay.parentNode) {
+              overlay.parentNode.removeChild(overlay);
+            }
+          };
+
+          const handleCancel = () => {
+            cleanup();
+            resolve(null);
+          };
+
+          const handleConfirm = () => {
+            cleanup();
+            resolve(input.value);
+          };
+
+          const handleOverlayClick = (event) => {
+            if (event.target === overlay) {
+              handleCancel();
+            }
+          };
+
+          const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+              event.preventDefault();
+              handleCancel();
+              return;
+            }
+            if (event.key === 'Enter' && !event.shiftKey && document.activeElement === input) {
+              event.preventDefault();
+              handleConfirm();
+              return;
+            }
+            trapFocus(event, modal);
+          };
+
+          overlay.addEventListener('click', handleOverlayClick);
+          overlay.addEventListener('keydown', handleKeyDown);
+          cancelButton.addEventListener('click', handleCancel);
+          confirmButton.addEventListener('click', handleConfirm);
+        });
+      }
 
       const elements = {
         productsGrid: document.getElementById('productsGrid'),
@@ -938,21 +1236,26 @@
         });
       }
 
-      function handleReset() {
-        if (confirm('¿Seguro que querés borrar todos los datos guardados?')) {
-          localStorage.removeItem(STORAGE_KEY);
-          state = getDefaultState();
-          lastResults = [];
-          renderParameters();
-          renderProducts();
-          renderGroupControls();
-          renderCosts();
-          updateModeButtons();
-          updateModePanels();
-          updateCostSummary();
-          renderResults([]);
-          showToast('Datos restaurados');
-        }
+      async function handleReset() {
+        const confirmed = await openConfirmModal({
+          title: 'Resetear datos',
+          message: '¿Seguro que querés borrar todos los datos guardados?',
+          confirmText: 'Borrar todo',
+          cancelText: 'Cancelar'
+        }); // REPLACED: native dialog → internal modal
+        if (!confirmed) return;
+        localStorage.removeItem(STORAGE_KEY);
+        state = getDefaultState();
+        lastResults = [];
+        renderParameters();
+        renderProducts();
+        renderGroupControls();
+        renderCosts();
+        updateModeButtons();
+        updateModePanels();
+        updateCostSummary();
+        renderResults([]);
+        showToast('Datos restaurados');
       }
 
       function renderParameters() {
@@ -1028,10 +1331,13 @@
           value: currentValue,
           min: 0,
           step: 1,
-          onConfirm: (value) => {
+          onConfirm: async (value) => {
             const numeric = parseFloat(value);
             if (isNaN(numeric) || numeric <= 0) {
-              alert('Ingresá un valor numérico mayor a 0.');
+              await openAlertModal({
+                title: 'Valor inválido',
+                message: 'Ingresá un valor numérico mayor a 0.'
+              }); // REPLACED: native dialog → internal modal
               return false;
             }
             if (isPrice) {
@@ -1072,8 +1378,8 @@
           if (event.target === overlay) close();
         });
         overlay.querySelector('.cancel').addEventListener('click', close);
-        overlay.querySelector('.confirm').addEventListener('click', () => {
-          const accepted = onConfirm(input.value);
+        overlay.querySelector('.confirm').addEventListener('click', async () => {
+          const accepted = await onConfirm(input.value);
           if (accepted !== false) close();
         });
       }
@@ -1196,12 +1502,21 @@
         elements.deleteGroupBtn.disabled = !hasSelection;
       }
 
-      function handleCreateGroup() {
-        const name = prompt('Nombre del nuevo grupo de costos:');
+      async function handleCreateGroup() {
+        const name = await openPromptModal({
+          title: 'Nuevo grupo de costos',
+          label: 'Nombre del nuevo grupo de costos',
+          placeholder: 'Ej.: Servicios',
+          confirmText: 'Crear',
+          cancelText: 'Cancelar'
+        }); // REPLACED: native dialog → internal modal
         if (!name) return;
         const trimmed = name.trim();
         if (!trimmed) {
-          alert('Ingresá un nombre válido para el grupo.');
+          await openAlertModal({
+            title: 'Nombre inválido',
+            message: 'Ingresá un nombre válido para el grupo.'
+          }); // REPLACED: native dialog → internal modal
           return;
         }
         const newGroup = { id: `group_${Date.now()}`, name: trimmed };
@@ -1215,18 +1530,31 @@
         showToast('Grupo creado');
       }
 
-      function handleRenameGroup() {
+      async function handleRenameGroup() {
         if (!state.activeCostGroupId) {
-          alert('Seleccioná un grupo para renombrar.');
+          await openAlertModal({
+            title: 'Acción no disponible',
+            message: 'Seleccioná un grupo para renombrar.'
+          }); // REPLACED: native dialog → internal modal
           return;
         }
         const group = state.costGroups.find(g => g.id === state.activeCostGroupId);
         if (!group) return;
-        const name = prompt('Nuevo nombre del grupo:', group.name);
+        const name = await openPromptModal({
+          title: 'Renombrar grupo',
+          label: 'Nuevo nombre del grupo',
+          placeholder: 'Ej.: Costos fijos',
+          initialValue: group.name,
+          confirmText: 'Guardar',
+          cancelText: 'Cancelar'
+        }); // REPLACED: native dialog → internal modal
         if (name === null) return;
         const trimmed = name.trim();
         if (!trimmed) {
-          alert('Ingresá un nombre válido para el grupo.');
+          await openAlertModal({
+            title: 'Nombre inválido',
+            message: 'Ingresá un nombre válido para el grupo.'
+          }); // REPLACED: native dialog → internal modal
           return;
         }
         group.name = trimmed;
@@ -1236,14 +1564,23 @@
         showToast('Grupo renombrado');
       }
 
-      function handleDeleteGroup() {
+      async function handleDeleteGroup() {
         if (!state.activeCostGroupId) {
-          alert('Seleccioná un grupo para eliminar.');
+          await openAlertModal({
+            title: 'Acción no disponible',
+            message: 'Seleccioná un grupo para eliminar.'
+          }); // REPLACED: native dialog → internal modal
           return;
         }
         const group = state.costGroups.find(g => g.id === state.activeCostGroupId);
         if (!group) return;
-        if (!confirm(`¿Eliminar el grupo "${group.name}"? Los costos permanecerán sin grupo.`)) return;
+        const confirmed = await openConfirmModal({
+          title: 'Eliminar grupo',
+          message: `¿Eliminar el grupo "${group.name}"? Los costos permanecerán sin grupo.`,
+          confirmText: 'Eliminar',
+          cancelText: 'Cancelar'
+        }); // REPLACED: native dialog → internal modal
+        if (!confirmed) return;
         state.costGroups = state.costGroups.filter(g => g.id !== group.id);
         state.costs = state.costs.map((cost) => cost.groupId === group.id ? Object.assign({}, cost, { groupId: null }) : cost);
         state.activeCostGroupId = null;
@@ -1324,15 +1661,21 @@
           if (event.target === overlay) close();
         });
         overlay.querySelector('.cancel').addEventListener('click', close);
-        overlay.querySelector('.confirm').addEventListener('click', () => {
+        overlay.querySelector('.confirm').addEventListener('click', async () => {
           const name = inputs.name.value.trim();
           const amount = parseFloat(inputs.amount.value);
           if (!name) {
-            alert('Ingresá un nombre para el costo.');
+            await openAlertModal({
+              title: 'Dato requerido',
+              message: 'Ingresá un nombre para el costo.'
+            }); // REPLACED: native dialog → internal modal
             return;
           }
           if (isNaN(amount) || amount <= 0) {
-            alert('Ingresá un monto válido.');
+            await openAlertModal({
+              title: 'Monto inválido',
+              message: 'Ingresá un monto válido.'
+            }); // REPLACED: native dialog → internal modal
             return;
           }
           const costData = {
@@ -1359,8 +1702,14 @@
         });
       }
 
-      function deleteCost(id) {
-        if (!confirm('¿Eliminar este costo?')) return;
+      async function deleteCost(id) {
+        const confirmed = await openConfirmModal({
+          title: 'Eliminar costo',
+          message: '¿Eliminar este costo?',
+          confirmText: 'Eliminar',
+          cancelText: 'Cancelar'
+        }); // REPLACED: native dialog → internal modal
+        if (!confirmed) return;
         state.costs = state.costs.filter(c => c.id !== id);
         saveState();
         renderCosts();
@@ -1763,18 +2112,21 @@
         renderCostDetailPanel();
       }
 
-      function copyResult(result) {
+      async function copyResult(result) {
         const text = result.copyText || buildCopyText(result);
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(() => {
+          try {
+            await navigator.clipboard.writeText(text);
             showToast('Resultado copiado');
-          }).catch(() => fallbackCopy(text));
+          } catch (error) {
+            await fallbackCopy(text);
+          }
         } else {
-          fallbackCopy(text);
+          await fallbackCopy(text);
         }
       }
 
-      function fallbackCopy(text) {
+      async function fallbackCopy(text) {
         const textarea = document.createElement('textarea');
         textarea.value = text;
         textarea.style.position = 'fixed';
@@ -1785,7 +2137,10 @@
           document.execCommand('copy');
           showToast('Resultado copiado');
         } catch (error) {
-          alert('No se pudo copiar automáticamente, copiá el texto manualmente.');
+          await openAlertModal({
+            title: 'Copiá el texto manualmente',
+            message: 'No se pudo copiar automáticamente, copiá el texto manualmente.'
+          }); // REPLACED: native dialog → internal modal
         }
         document.body.removeChild(textarea);
       }
